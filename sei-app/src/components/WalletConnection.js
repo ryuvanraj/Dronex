@@ -94,32 +94,17 @@ export default function WalletConnection() {
 
   const connectWallet = async () => {
     setIsConnecting(true);
-      try {
-      if (typeof window === "undefined") return;
-      // Prefer Leap then Compass
-      if (window.leap) {
-        await window.leap.enable(chainId);
-        const key = await window.leap.getKey(chainId);
-        if (key?.bech32Address) {
-          setIsConnected(true);
-          setWalletAddress(key.bech32Address);
-          await fetchBalance(key.bech32Address);
-          return;
-        }
-      }
-      if (!window.compass && !window.leap) {
-        alert("No compatible SEI wallet found. Please install Leap or Compass extension for SEI.");
+    try {
+      if (typeof window === "undefined" || !window.compass) {
+        alert("Compass wallet not found. Please install the Compass extension for SEI.");
         return;
       }
-      // Fallback to Compass
-      if (window.compass) {
-        await window.compass.enable(chainId);
-        const key = await window.compass.getKey(chainId);
-        if (key?.bech32Address) {
-          setIsConnected(true);
-          setWalletAddress(key.bech32Address);
-          await fetchBalance(key.bech32Address);
-        }
+      await window.compass.enable(chainId);
+      const key = await window.compass.getKey(chainId);
+      if (key?.bech32Address) {
+        setIsConnected(true);
+        setWalletAddress(key.bech32Address);
+        await fetchBalance(key.bech32Address);
       }
     } catch (err) {
       console.error("Error connecting Compass wallet:", err);

@@ -65,8 +65,8 @@ class DroneManagementSystem {
 
   setupWebSocket() {
     try {
-      this.wss = new WebSocket.Server({ port: 8082 });
-      console.log('🔌 WebSocket server started on port 8082');
+      this.wss = new WebSocket.Server({ port: 8080 });
+      console.log('🔌 WebSocket server started on port 8080');
       
       this.wss.on('connection', (ws) => {
         console.log('Client connected to WebSocket');
@@ -98,69 +98,6 @@ class DroneManagementSystem {
     // Initialize Eliza agent (using mock implementation)
     this.elizaAgent = await this.createElizaAgent(elizaConfig);
     console.log('✅ ElizaOS Agent initialized successfully');
-  }
-
-  // Method to get Hive Intelligence data
-  async getHiveIntelligence() {
-    try {
-      // Calculate overall hive intelligence metrics
-      const totalDrones = this.droneFleet.length;
-      const availableDrones = this.droneFleet.filter(d => d.status === 'available').length;
-      
-      // Select the best drone for demonstration
-      const bestDrone = this.droneFleet.reduce((best, current) => {
-        const currentScore = Object.values(current.hiveMind).reduce((sum, val) => sum + val, 0) / Object.keys(current.hiveMind).length;
-        const bestScore = best ? Object.values(best.hiveMind).reduce((sum, val) => sum + val, 0) / Object.keys(best.hiveMind).length : 0;
-        return currentScore > bestScore ? current : best;
-      }, null);
-      
-      return {
-        totalDrones,
-        availableDrones,
-        networkEfficiency: 0.94,
-        hiveScore: bestDrone ? Object.values(bestDrone.hiveMind).reduce((sum, val) => sum + val, 0) / Object.keys(bestDrone.hiveMind).length : 0.90,
-        assignedDrone: bestDrone,
-        timestamp: new Date().toISOString()
-      };
-    } catch (error) {
-      console.error('Error getting hive intelligence:', error);
-      return {
-        totalDrones: this.droneFleet.length,
-        availableDrones: this.droneFleet.filter(d => d.status === 'available').length,
-        networkEfficiency: 0.90,
-        hiveScore: 0.85,
-        assignedDrone: this.droneFleet[0] || null,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-
-  // Method to get fleet status
-  async getFleetStatus() {
-    try {
-      const available = this.droneFleet.filter(d => d.status === 'available').length;
-      const busy = this.droneFleet.filter(d => d.status === 'busy').length;
-      const maintenance = this.droneFleet.filter(d => d.status === 'maintenance').length;
-      
-      return {
-        total: this.droneFleet.length,
-        available,
-        busy,
-        maintenance,
-        efficiency: 0.94,
-        timestamp: new Date().toISOString()
-      };
-    } catch (error) {
-      console.error('Error getting fleet status:', error);
-      return {
-        total: this.droneFleet.length,
-        available: this.droneFleet.length,
-        busy: 0,
-        maintenance: 0,
-        efficiency: 0.90,
-        timestamp: new Date().toISOString()
-      };
-    }
   }
 
   // Hive Intelligence Algorithm
@@ -434,114 +371,6 @@ class DroneManagementSystem {
   getTodaysTransactionCount() {
     // Mock function - in production, query SEI blockchain
     return Math.floor(Math.random() * 50) + 10;
-  }
-
-  // Get fleet status for API
-  async getFleetStatus() {
-    return {
-      drones: this.droneFleet.map(drone => ({
-        id: drone.id,
-        name: `ElizaOS ${drone.id}`,
-        status: drone.status,
-        location: drone.location,
-        batteryLevel: drone.properties.currentBattery,
-        walletAddress: drone.walletAddress,
-        capabilities: {
-          maxPayload: drone.properties.maxCapacity,
-          range: drone.properties.maxRange,
-          features: drone.properties.cargoType
-        },
-        aiStatus: 'Hive Mind Connected',
-        lastSeen: new Date().toISOString()
-      })),
-      totalDrones: this.droneFleet.length,
-      activeDeliveries: this.activeJobs.size
-    };
-  }
-
-  // Get specific drone details
-  async getDroneDetails(droneId) {
-    const drone = this.droneFleet.find(d => d.id === droneId);
-    if (!drone) return null;
-
-    return {
-      id: drone.id,
-      name: `ElizaOS ${drone.id}`,
-      status: drone.status,
-      location: drone.location,
-      batteryLevel: drone.properties.currentBattery,
-      walletAddress: drone.walletAddress,
-      capabilities: drone.properties,
-      performance: drone.hiveMind,
-      lastSeen: new Date().toISOString()
-    };
-  }
-
-  // Get hive intelligence status
-  async getHiveIntelligence() {
-    return {
-      status: 'online',
-      connectedDrones: this.droneFleet.filter(d => d.status !== 'offline').length,
-      totalMissions: Math.floor(Math.random() * 200) + 100,
-      successRate: 98.5,
-      networkHealth: 'optimal',
-      activeModels: ['Navigation', 'Weather', 'Traffic', 'Security'],
-      insights: [
-        'All drones operating within normal parameters',
-        'Weather conditions favorable for operations',
-        'Hive mind optimization active'
-      ]
-    };
-  }
-
-  // Allocate optimal drone for order
-  async allocateOptimalDrone(orderData) {
-    // Find best available drone
-    const availableDrones = this.droneFleet.filter(d => d.status === 'available');
-    
-    if (availableDrones.length === 0) {
-      return null;
-    }
-
-    // Simple allocation logic - pick first available
-    const selectedDrone = availableDrones[0];
-    
-    // Update drone status
-    selectedDrone.status = 'allocated';
-
-    return {
-      drone: {
-        id: selectedDrone.id,
-        name: `ElizaOS ${selectedDrone.id}`,
-        walletAddress: selectedDrone.walletAddress,
-        batteryLevel: selectedDrone.properties.currentBattery,
-        location: selectedDrone.location
-      },
-      timeline: {
-        pickup: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-        delivery: new Date(Date.now() + 45 * 60 * 1000).toISOString()
-      },
-      route: {
-        pickupLocation: 'Sei Delivery Hub',
-        deliveryLocation: orderData.deliveryAddress || 'Customer Address',
-        distance: '8.2 km',
-        estimatedDuration: '12 minutes'
-      },
-      aiStatus: 'Hive Intelligence Active - Route Optimized'
-    };
-  }
-
-  // Get drone wallet information
-  async getDroneWallet(droneId) {
-    const drone = this.droneFleet.find(d => d.id === droneId);
-    if (!drone) return null;
-
-    return {
-      address: drone.walletAddress,
-      balance: (Math.random() * 10).toFixed(6),
-      recentTransactions: [],
-      escrowBalance: (Math.random() * 5).toFixed(6)
-    };
   }
 
   // ElizaOS agent creation
