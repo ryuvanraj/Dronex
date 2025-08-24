@@ -373,6 +373,33 @@ class DroneManagementSystem {
     return Math.floor(Math.random() * 50) + 10;
   }
 
+  // Get fleet status for API endpoints
+  async getFleetStatus() {
+    return {
+      drones: this.droneFleet,
+      totalDrones: this.droneFleet.length,
+      availableDrones: this.droneFleet.filter(d => d.status === 'available').length,
+      activeDrones: this.droneFleet.filter(d => d.status === 'busy').length,
+      maintenanceDrones: this.droneFleet.filter(d => d.status === 'maintenance').length,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  // Get hive intelligence data for API endpoints
+  async getHiveIntelligence() {
+    const analytics = this.generateHiveAnalytics();
+    return {
+      status: 'online',
+      connectedDrones: analytics.fleetOverview.availableDrones,
+      totalMissions: this.getTodaysTransactionCount(),
+      successRate: 98.5,
+      networkHealth: 'optimal',
+      hiveIntelligence: analytics.hiveIntelligence,
+      fleetOverview: analytics.fleetOverview,
+      timestamp: new Date().toISOString()
+    };
+  }
+
   // ElizaOS agent creation
   async createElizaAgent(config) {
     // This would be the actual ElizaOS agent initialization in production

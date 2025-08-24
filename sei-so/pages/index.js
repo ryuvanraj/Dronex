@@ -147,7 +147,7 @@ export default function Home() {
         return;
       }
     } else {
-      setStatus("No Sei or EVM wallet found. Please install Compass Wallet for Sei.");
+      setStatus("No Sei or EVM wallet found. Please install ethereum Wallet for Sei.");
       return;
     }
 

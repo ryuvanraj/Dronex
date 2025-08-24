@@ -609,6 +609,42 @@ app.get('/api/drones/:droneId/wallet', async (req, res) => {
   }
 });
 
+// Get job status for a specific order
+app.get('/api/drone/job-status/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    console.log(`[API] Fetching job status for order ${orderId}...`);
+    
+    // Check if there's an active job for this order
+    const activeJob = droneSystem.activeJobs.get(orderId);
+    
+    if (!activeJob) {
+      return res.status(404).json({
+        success: false,
+        error: 'No active job found for this order'
+      });
+    }
+
+    res.json({
+      success: true,
+      job: {
+        id: orderId,
+        drone: activeJob.drone,
+        status: activeJob.status,
+        assignedAt: activeJob.assignedAt,
+        estimatedDeliveryTime: activeJob.estimatedDeliveryTime || 30,
+        job: activeJob.job
+      }
+    });
+  } catch (error) {
+    console.error(`[API] Error fetching job status for order ${req.params.orderId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Add the missing API endpoints that the frontend expects
 app.get('/api/drone/eliza-status', async (req, res) => {
   try {

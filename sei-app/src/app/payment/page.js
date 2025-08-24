@@ -34,9 +34,8 @@ export default function PaymentPage() {
   const [seiExchangeRate, setSeiExchangeRate] = useState(3.12);
   const [paymentStep, setPaymentStep] = useState('wallet'); // 'wallet' | 'processing' | 'success'
   const [successDetails, setSuccessDetails] = useState(null);
-  const [manualTx, setManualTx] = useState('');
-  const [manualTxSubmitting, setManualTxSubmitting] = useState(false);
-  const [manualTxMessage, setManualTxMessage] = useState('');
+  const [selectedDrone, setSelectedDrone] = useState(null);
+  const [droneAssignmentData, setDroneAssignmentData] = useState(null);
   const [sessionId] = useState(() => `cart-${Date.now()}`); // Generate once on mount
   
   const { cart, getTotalPrice, clearCart } = useCart();
@@ -458,21 +457,7 @@ export default function PaymentPage() {
                     Delivery Information
                   </h3>
                   
-                  {/* Delivery Time */}
-                  <div className="mb-6">
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="text-2xl">🚁</span>
-                      <div>
-                        <h4 className="font-bold text-white">Estimated Delivery</h4>
-                        <p className="text-drone-highlight font-bold" suppressHydrationWarning={true}>
-                          {new Date(successDetails.deliveryTime).toLocaleString()}
-                        </p>
-                        <p className="text-gray-400 text-sm">
-                          ({successDetails.isDeliveryOrder ? "10-20 minutes" : "15-30 minutes"} from dispatch)
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                 
 
                   {/* Drone Details */}
                   {successDetails.droneJobResult && (
@@ -776,67 +761,6 @@ export default function PaymentPage() {
                 )}
               </button>
 
-              {/* Manual Payment Fallback */}
-              <div className="mt-4 p-4 bg-drone-charcoal/20 border border-drone-charcoal rounded-lg">
-                <h4 className="font-bold text-white mb-2">Manual Payment (fallback)</h4>
-                <p className="text-sm text-gray-300 mb-3">If your wallet doesn't prompt, copy the shop address below, perform the SEI transfer from your wallet, then paste the transaction hash here.</p>
-                <div className="mb-3">
-                  <label className="text-xs text-gray-400">Shop (Bech32) Address</label>
-                  <div className="mt-1 flex items-center gap-2">
-                    <input readOnly value={"sei1884g9d7kruxenr3zv8gysc8uh05acp3mcdykke"} className="flex-1 px-3 py-2 bg-drone-charcoal border border-drone-charcoal rounded-lg text-white text-sm" suppressHydrationWarning={true} />
-                    <button onClick={async () => { await navigator.clipboard.writeText('sei1884g9d7kruxenr3zv8gysc8uh05acp3mcdykke'); setManualTxMessage('Address copied to clipboard'); setTimeout(()=>setManualTxMessage(''),2000); }} className="px-3 py-2 bg-drone-highlight text-black rounded-lg text-sm" suppressHydrationWarning={true}>Copy</button>
-                  </div>
-                  {manualTxMessage && <div className="text-xs text-green-400 mt-2">{manualTxMessage}</div>}
-                </div>
-
-                <div className="mb-3">
-                  <label className="text-xs text-gray-400">Paste Transaction Hash</label>
-                  <input value={manualTx} onChange={(e) => setManualTx(e.target.value)} placeholder="0x... or tx hash" className="w-full mt-1 px-3 py-2 bg-drone-charcoal border border-drone-charcoal rounded-lg text-white text-sm" suppressHydrationWarning={true} />
-                </div>
-
-                <div className="flex gap-2">
-                  <button disabled={manualTxSubmitting || !manualTx} onClick={async () => {
-                    setManualTxSubmitting(true);
-                    setManualTxMessage('Submitting transaction...');
-                    try {
-                      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
-                      const payload = {
-                        transactionHash: manualTx.trim(),
-                        deliveryDetails: {
-                          deliveryAddress,
-                          pickupAddress: isDeliveryOrder ? deliveryRequest?.senderLocation : 'Sei Delivery Hub',
-                          walletAddress: walletAddress || null,
-                          customerWallet: walletAddress || null,
-                          shopOwnerWallet: '0xA50050DBDBe672a5F0261e403909bCB8590B9130',
-                          instructions: `Manual payment for order: ${isDeliveryOrder ? (deliveryRequest?.itemName || 'Delivery') : `Cart (${cart.length} items)`}`
-                        },
-                        totalSeiAmount: totalSei
-                      };
-
-                      const res = await fetch(`${backendUrl}/api/drone/create-escrow-job`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                      });
-
-                      if (!res.ok) throw new Error(`Backend responded ${res.status}`);
-
-                      const data = await res.json();
-                      setManualTxMessage('Transaction accepted. Drone job created: ' + (data.jobId || data.job_id || 'unknown'));
-                      // Optionally navigate to order-history or update UI
-                    } catch (err) {
-                      console.error('Manual tx submission failed', err);
-                      setManualTxMessage('Failed to submit tx: ' + (err.message || err));
-                    } finally {
-                      setManualTxSubmitting(false);
-                      setTimeout(()=>setManualTxMessage(''), 8000);
-                    }
-                  }} className="px-4 py-2 bg-drone-highlight text-black rounded-lg font-bold disabled:opacity-60">Submit TX</button>
-
-                  <button onClick={() => { setManualTx(''); setManualTxMessage(''); }} className="px-4 py-2 border border-drone-charcoal rounded-lg text-sm" suppressHydrationWarning={true}>Clear</button>
-                </div>
-              </div>
-
               {/* ElizaOS and Hive Intelligence Display - Show when processing or connected */}
               {(isProcessing || walletConnected) && (
                 <div className="mt-6">
@@ -844,8 +768,101 @@ export default function PaymentPage() {
                     orderId={isDeliveryOrder ? deliveryRequest?.id : sessionId}
                     onDataUpdate={(data) => {
                       console.log('ElizaOS/Hive data updated:', data);
+                      if (data.selectedDrone) {
+                        setSelectedDrone(data.selectedDrone);
+                      }
+                      if (data.assignmentData) {
+                        setDroneAssignmentData(data.assignmentData);
+                      }
                     }}
+                    selectedDrone={selectedDrone}
+                    assignmentData={droneAssignmentData}
                   />
+                </div>
+              )}
+
+              {/* Wallet Addresses Information */}
+              {walletConnected && (
+                <div className="mt-6">
+                  <div className="hud-card p-6">
+                    <h4 className="font-orbitron text-lg text-drone-highlight mb-4">💳 Transaction Parties</h4>
+                    <div className="space-y-4">
+                      {/* Customer Wallet */}
+                      <div className="flex items-center justify-between p-3 bg-drone-charcoal/20 rounded-lg">
+                        <div>
+                          <div className="text-sm text-gray-400">👤 Customer Wallet</div>
+                          <div className="text-sm text-gray-300 font-mono mt-1">
+                            {walletAddress ? `${walletAddress.slice(0, 8)}...${walletAddress.slice(-6)}` : 'Not connected'}
+                          </div>
+                        </div>
+                        {walletAddress && (
+                          <button 
+                            onClick={() => navigator.clipboard.writeText(walletAddress)}
+                            className="px-3 py-1 bg-drone-highlight/20 text-drone-highlight text-xs rounded hover:bg-drone-highlight/30 transition-colors"
+                          >
+                            Copy
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Shop Owner Wallet */}
+                      <div className="flex items-center justify-between p-3 bg-drone-charcoal/20 rounded-lg">
+                        <div>
+                          <div className="text-sm text-gray-400">🏪 Shop Owner Wallet</div>
+                          <div className="text-sm text-gray-300 font-mono mt-1">
+                            0xA500...9130
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => navigator.clipboard.writeText('0xA50050DBDBe672a5F0261e403909bCB8590B9130')}
+                          className="px-3 py-1 bg-drone-highlight/20 text-drone-highlight text-xs rounded hover:bg-drone-highlight/30 transition-colors"
+                        >
+                          Copy
+                        </button>
+                      </div>
+
+                      {/* Drone Wallet (if assigned) */}
+                      {selectedDrone?.walletAddress && (
+                        <div className="flex items-center justify-between p-3 bg-drone-charcoal/20 rounded-lg">
+                          <div>
+                            <div className="text-sm text-gray-400">🚁 Assigned Drone Wallet</div>
+                            <div className="text-sm text-gray-300 font-mono mt-1">
+                              {`${selectedDrone.walletAddress.slice(0, 8)}...${selectedDrone.walletAddress.slice(-6)}`}
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => navigator.clipboard.writeText(selectedDrone.walletAddress)}
+                            className="px-3 py-1 bg-drone-highlight/20 text-drone-highlight text-xs rounded hover:bg-drone-highlight/30 transition-colors"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Platform Escrow Wallet */}
+                      <div className="flex items-center justify-between p-3 bg-drone-charcoal/20 rounded-lg">
+                        <div>
+                          <div className="text-sm text-gray-400">🔒 Escrow Contract</div>
+                          <div className="text-sm text-gray-300 font-mono mt-1">
+                            sei188...ykke
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => navigator.clipboard.writeText('sei1884g9d7kruxenr3zv8gysc8uh05acp3mcdykke')}
+                          className="px-3 py-1 bg-drone-highlight/20 text-drone-highlight text-xs rounded hover:bg-drone-highlight/30 transition-colors"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-4 p-3 bg-blue-400/10 border border-blue-400/20 rounded-lg">
+                      <div className="text-xs text-blue-400 font-semibold mb-1">ℹ️ Transaction Flow</div>
+                      <div className="text-xs text-gray-300">
+                        Payment flows from Customer → Escrow → Shop Owner. Drone receives delivery fee upon completion.
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -860,15 +877,6 @@ export default function PaymentPage() {
                 </ul>
               </div>
 
-              {/* Estimated Delivery */}
-              <div className="mt-4 pt-4 border-t border-drone-charcoal">
-                <h4 className="font-bold text-white mb-2">Estimated Delivery</h4>
-                <div className="flex items-center gap-2 text-drone-highlight">
-                  <span className="text-xl">🚁</span>
-                  <span className="font-bold">
-                    {isDeliveryOrder ? "10-20 minutes" : "15-30 minutes"}
-                  </span>
-                </div>
                 {isDeliveryOrder && (
                   <p className="text-xs text-gray-400 mt-1">
                     One-to-one courier delivery via drone
@@ -877,7 +885,7 @@ export default function PaymentPage() {
               </div>
             </div>
           </div>
-        </div>
+       
         )} {/* Close the conditional for original payment form */}
       </div>
 

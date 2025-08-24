@@ -70,8 +70,7 @@ export default function ProductDetailPage({ params }) {
               <h3 className="text-xl font-bold text-drone-highlight mb-4 font-orbitron">Delivery Information</h3>
               <ul className="space-y-2 text-gray-300">
                 <li>✈️ Drone delivery available</li>
-                <li>🕒 Estimated delivery: 15-30 minutes</li>
-                <li>📍 Delivery radius: 10km</li>
+                
                 <li>🔒 Secured with blockchain escrow</li>
               </ul>
             </div>
