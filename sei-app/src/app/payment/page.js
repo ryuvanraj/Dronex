@@ -315,15 +315,12 @@ export default function PaymentPage() {
         }));
       }
 
-      // Save to order history
       const existingOrders = JSON.parse(localStorage.getItem('completedOrders') || '[]');
       existingOrders.unshift(newOrder);
       localStorage.setItem('completedOrders', JSON.stringify(existingOrders));
       
-      // Step 5: Complete the process
       setPaymentStep('success');
       
-      // Store success details for the success screen
       setSuccessDetails({
         transactionHash: paymentResult.transactionHash,
         contractJobId: paymentResult.contractJobId,
