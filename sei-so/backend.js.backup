@@ -890,26 +890,6 @@ app.post('/api/drone/create-escrow-job', async (req, res) => {
         recipient: recipientAddress,
         jobDetails: jobDetails,
         contractAddress: contractAddress
-      },
-      hiveIntelligence: {
-        score: droneAssignment.hiveScore,
-        networkStatus: "Connected",
-        routeOptimization: "Active",
-        trafficAnalysis: "Real-time",
-        weatherStatus: "Clear",
-        fleetStatus: "Synchronized",
-        droneWallet: droneAssignment.walletAddress
-      },
-      elizaOS: {
-        agent: "Active",
-        droneStatus: "Dispatched",
-        network: "Sei Atlantic-2",
-        uptime: "99.9%",
-        version: "1.0.0"
-      },
-      trackingInfo: {
-        pickupETA: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-        deliveryETA: new Date(Date.now() + droneAssignment.estimatedDeliveryTime * 60 * 1000).toISOString()
       }
     });
     
@@ -922,68 +902,112 @@ app.post('/api/drone/create-escrow-job', async (req, res) => {
     });
   }
 });
-
-// Endpoint to confirm delivery completion (triggers smart contract confirmDelivery)
-app.post('/api/drone/confirm-delivery', async (req, res) => {
-  try {
-    const { contractJobId, localJobId } = req.body;
-    
-    console.log(`[DELIVERY] Confirming delivery for contract job: ${contractJobId}, local job: ${localJobId}`);
-    
-    if (contractJobId) {
-      try {
-        // Call the smart contract's confirmDelivery function
-        console.log(`[CONTRACT] Calling confirmDelivery(${contractJobId}) on contract ${CONTRACT_ADDRESS}`);
-        
-        const confirmTx = await contract.confirmDelivery(contractJobId);
-        console.log(`[CONTRACT] Delivery confirmation transaction submitted: ${confirmTx.hash}`);
-        
-        const confirmReceipt = await confirmTx.wait();
-        console.log(`[CONTRACT] Delivery confirmation confirmed in block: ${confirmReceipt.blockNumber}`);
-        
-        // Update local job status
-        jobStatus[localJobId] = 'delivery-confirmed';
-        
-        res.status(200).json({
-          success: true,
-          message: 'Delivery confirmed successfully',
-          contractJobId: contractJobId,
-          localJobId: localJobId,
-          confirmationTxHash: confirmTx.hash,
-          blockNumber: confirmReceipt.blockNumber,
-          paymentDistribution: {
-            recipient: "80%",
-            drone: "10%",
-            platform: "10%"
-          }
-        });
-        
-      } catch (contractError) {
-        console.error(`[CONTRACT] Failed to confirm delivery on contract: ${contractError.message}`);
-        res.status(500).json({
-          success: false,
-          error: contractError.message,
-          message: 'Failed to confirm delivery on smart contract'
-        });
+      if (contractSupport && contractJobId && droneAssignment.walletAddress) {
+        try {
+          console.log(`[ESCROW] Assigning drone ${droneAssignment.walletAddress} to contract job ${contractJobId}`);
+          const assignTx = await contract.assignDrone(contractJobId, droneAssignment.walletAddress);
+          await assignTx.wait();
+          console.log(`[ESCROW] Drone successfully assigned to contract job`);
+        } catch (assignError) {
+          console.error(`[ESCROW] Failed to assign drone to contract:`, assignError.message);
+        }
       }
-    } else {
-      // Local job only (no smart contract)
-      jobStatus[localJobId] = 'delivery-confirmed';
-      res.status(200).json({
+      
+      res.json({
         success: true,
-        message: 'Local delivery confirmed',
         localJobId: localJobId,
+        contractJobId: contractJobId,
+        contractTxHash: tx.hash,
+        paymentTxHash: transactionHash,
+        blockNumber: receipt.blockNumber,
+        droneAssigned: droneAssignment.droneId,
+        droneWallet: droneAssignment.walletAddress,
+        estimatedDeliveryTime: new Date(Date.now() + droneAssignment.estimatedDeliveryTime * 60 * 1000).toISOString(),
+        escrowContract: {
+          active: true,
+          contractAddress: CONTRACT_ADDRESS,
+          jobId: contractJobId,
+          amount: amount,
+          microSeiAmount: microSeiAmount,
+          status: 'funded'
+        },
+        hiveIntelligence: {
+          score: droneAssignment.hiveScore,
+          networkStatus: "Connected",
+          routeOptimization: "Active",
+          trafficAnalysis: "Real-time",
+          weatherStatus: "Clear",
+          fleetStatus: "Synchronized",
+          droneWallet: droneAssignment.walletAddress
+        },
+        elizaOS: {
+          agent: "Active",
+          droneStatus: "Dispatched",
+          network: "Sei Atlantic-2",
+          uptime: "99.9%",
+          version: "1.0.0"
+        },
+        trackingInfo: {
+          pickupETA: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+          deliveryETA: new Date(Date.now() + droneAssignment.estimatedDeliveryTime * 60 * 1000).toISOString()
+        }
+      });
+      
+    } catch (contractError) {
+      console.error('[ESCROW] Smart contract interaction failed:', contractError);
+      
+      // Fallback: still process as regular delivery job
+      const fallbackJobId = `FALLBACK-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      
+      const droneAssignment = await droneSystem.processDeliveryConfirmation(fallbackJobId, {
+        sender: senderAddress,
+        recipient: recipientAddress,
+        amount: amount.toString(),
+        details: jobDetails
+      });
+      
+      jobStatus[fallbackJobId] = 'payment-received';
+      jobDroneWallets[fallbackJobId] = droneAssignment.walletAddress;
+      
+      res.json({
+        success: true,
+        localJobId: fallbackJobId,
         contractJobId: null,
-        note: 'No smart contract interaction - local tracking only'
+        paymentTxHash: transactionHash,
+        droneAssigned: droneAssignment.droneId,
+        droneWallet: droneAssignment.walletAddress,
+        estimatedDeliveryTime: new Date(Date.now() + droneAssignment.estimatedDeliveryTime * 60 * 1000).toISOString(),
+        escrowContract: {
+          active: false,
+          error: contractError.message,
+          fallbackMode: true
+        },
+        warning: 'Escrow contract interaction failed, processing as direct payment',
+        hiveIntelligence: {
+          score: droneAssignment.hiveScore,
+          networkStatus: "Connected",
+          routeOptimization: "Active",
+          trafficAnalysis: "Real-time",
+          weatherStatus: "Clear",
+          fleetStatus: "Synchronized",
+          droneWallet: droneAssignment.walletAddress
+        },
+        elizaOS: {
+          agent: "Active",
+          droneStatus: "Dispatched",
+          network: "Sei Atlantic-2",
+          uptime: "99.9%",
+          version: "1.0.0"
+        }
       });
     }
     
   } catch (error) {
-    console.error(`[DELIVERY] Error confirming delivery:`, error);
+    console.error('[ESCROW] Error creating escrow job:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      message: 'Failed to confirm delivery'
+      message: 'Failed to create escrow job'
     });
   }
 });

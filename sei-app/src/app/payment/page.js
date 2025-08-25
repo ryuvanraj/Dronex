@@ -326,16 +326,26 @@ export default function PaymentPage() {
       // Store success details for the success screen
       setSuccessDetails({
         transactionHash: paymentResult.transactionHash,
+        contractJobId: paymentResult.contractJobId,
         amount: totalOrderAmount,
         usdAmount: total,
         deliveryTime: droneJobResult?.estimatedDeliveryTime || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours from now if not provided
+        escrowActive: paymentResult.escrowActive,
+        contractAddress: paymentResult.toAddress, // DeliveryEscrow contract address
         droneJobResult: droneJobResult ? {
           ...droneJobResult,
           droneId: droneJobResult.droneId || `DRN-${Math.random().toString(36).substr(2, 6).toUpperCase()}`
         } : null,
         elizaOSData,
         hiveIntelligence,
-        isDeliveryOrder
+        isDeliveryOrder,
+        paymentFlow: paymentResult.escrowActive ? 'escrow_contract' : 'direct_payment',
+        paymentDetails: {
+          sender: paymentResult.fromAddress,
+          recipient: paymentResult.recipientAddress,
+          escrowContract: paymentResult.toAddress,
+          walletType: paymentResult.walletType
+        }
       });
       
       // Clear cart if it's not a delivery order
@@ -428,6 +438,26 @@ export default function PaymentPage() {
                         <div className="text-gray-400">≈ ${successDetails.usdAmount} USD</div>
                       </div>
                     </div>
+                    {successDetails.escrowActive && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Payment Type:</span>
+                          <span className="text-drone-highlight font-bold">Escrow Contract</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Contract Address:</span>
+                          <span className="text-white font-mono">
+                            {truncateMiddle(successDetails.contractAddress, 8, 6)}
+                          </span>
+                        </div>
+                        {successDetails.contractJobId && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">Contract Job ID:</span>
+                            <span className="text-white font-mono">#{successDetails.contractJobId}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
                     <div className="flex justify-between">
                       <span className="text-gray-400">Network:</span>
                       <span className="text-white">Sei EVM Testnet</span>
@@ -449,6 +479,20 @@ export default function PaymentPage() {
                       View on Block Explorer
                     </button>
                   </div>
+                  
+                  {/* Escrow Explanation */}
+                  {successDetails.escrowActive && (
+                    <div className="mt-4 p-3 bg-drone-highlight/10 border border-drone-highlight/30 rounded-lg">
+                      <div className="flex items-center mb-2">
+                        <div className="w-2 h-2 bg-drone-highlight rounded-full mr-2"></div>
+                        <span className="text-drone-highlight text-sm font-bold">Escrow Protected</span>
+                      </div>
+                      <p className="text-gray-300 text-xs leading-relaxed">
+                        Your payment is secured in a smart contract. Funds will be automatically distributed: 
+                        80% to shop owner, 10% to drone operator, 10% platform fee - only after delivery confirmation.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Drone & Delivery Info */}

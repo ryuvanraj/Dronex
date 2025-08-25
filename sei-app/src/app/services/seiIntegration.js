@@ -315,36 +315,63 @@ export const executeSeiPayment = async (orderData, walletAddress, deliveryDetail
     const seiAmountFloat = parseFloat(orderData.totalSeiAmount);
     const weiAmount = BigInt(Math.floor(seiAmountFloat * Math.pow(10, 18))).toString(16);
     
-    console.log(`Creating EVM transaction with ${seiAmountFloat} SEI (${weiAmount} Wei) from ${senderAddress} to ${shopOwnerWallet}`);
+    console.log(`Creating DeliveryEscrow contract call with ${seiAmountFloat} SEI (${weiAmount} Wei) from ${senderAddress}`);
     
     // Prepare job details for smart contract
     const jobDetails = `DroneX Delivery: ${orderData.items.map(item => `${item.quantity}x ${item.name}`).join(', ')} | Address: ${deliveryDetails.deliveryAddress || 'Standard delivery'}`;
     
     try {
-      console.log('Requesting EVM transaction signature from wallet...');
-      console.log('Transaction details:', {
+      console.log('Calling DeliveryEscrow.postJob() via smart contract...');
+      console.log('Contract call details:', {
+        contract: SEI_CONFIG.contractAddress,
         from: senderAddress,
-        to: shopOwnerWallet,
         value: `0x${weiAmount}`,
-        amount: `${seiAmountFloat} SEI`
+        amount: `${seiAmountFloat} SEI`,
+        jobDetails: jobDetails,
+        recipient: shopOwnerWallet
       });
       
-      // Create EVM transaction
+      // Use the contract ABI to encode the function call properly
+      // Function signature: postJob(string memory _jobDetails, address _recipient)
+      const postJobABI = DELIVERY_ESCROW_ABI.find(item => item.name === 'postJob');
+      
+      // For browsers without ethers, we'll use a simpler approach
+      // Create the function selector: first 4 bytes of keccak256("postJob(string,address)")
+      const functionSelector = "0x1f0ff080"; // Pre-calculated for postJob(string,address)
+      
+      // Encode the function call data manually (simplified approach)
+      // This is a basic encoding - for production, use ethers.js or web3.js
+      const encoder = new TextEncoder();
+      const jobDetailsBytes = encoder.encode(jobDetails);
+      const jobDetailsHex = Array.from(jobDetailsBytes)
+        .map(byte => byte.toString(16).padStart(2, '0'))
+        .join('');
+      
+      // Basic ABI encoding for contract call
+      const paddedRecipient = shopOwnerWallet.slice(2).padStart(64, '0');
+      const paddedJobDetailsOffset = "0000000000000000000000000000000000000000000000000000000000000040";
+      const paddedJobDetailsLength = jobDetailsBytes.length.toString(16).padStart(64, '0');
+      const paddedJobDetailsData = jobDetailsHex.padEnd(Math.ceil(jobDetailsHex.length / 64) * 64, '0');
+      
+      const encodedData = functionSelector + paddedJobDetailsOffset + paddedRecipient + paddedJobDetailsLength + paddedJobDetailsData;
+      
+      // Create smart contract transaction parameters
       const transactionParameters = {
-        to: shopOwnerWallet,
+        to: SEI_CONFIG.contractAddress, // Send to DeliveryEscrow contract
         from: senderAddress,
-        value: `0x${weiAmount}`,
-        gas: '0x5208', // 21000 gas limit for simple transfer
+        value: `0x${weiAmount}`, // Payment amount
+        data: encodedData, // Contract function call
+        gas: '0x30d40', // 200,000 gas limit for contract interaction
         gasPrice: '0x09184e72a000', // 10 Gwei
       };
       
-      // Send the transaction using EVM method
+      // Send the contract transaction
       const txHash = await provider.request({
         method: 'eth_sendTransaction',
         params: [transactionParameters],
       });
       
-      console.log('Transaction sent with hash:', txHash);
+      console.log('DeliveryEscrow contract transaction sent with hash:', txHash);
       
       // Wait for transaction confirmation
       let receipt = null;
@@ -363,26 +390,46 @@ export const executeSeiPayment = async (orderData, walletAddress, deliveryDetail
             await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
           }
         } catch (receiptError) {
-          console.log('Waiting for transaction confirmation...', attempts + 1);
+          console.log('Waiting for contract transaction confirmation...', attempts + 1);
           attempts++;
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
       
       if (!receipt) {
-        console.warn('Transaction receipt not received within timeout, but transaction was sent');
+        console.warn('Contract transaction receipt not received within timeout, but transaction was sent');
         // Continue with backend call using just the transaction hash
       } else {
-        console.log('Transaction confirmed:', receipt);
+        console.log('Contract transaction confirmed:', receipt);
         
         if (receipt.status === '0x0') {
-          throw new Error('Transaction failed on blockchain');
+          throw new Error('Contract transaction failed on blockchain');
         }
       }
       
-      // Now call backend to create the escrow job in the smart contract
+      // Extract job ID from contract event logs if available
+      let contractJobId = null;
+      if (receipt && receipt.logs) {
+        for (const log of receipt.logs) {
+          // Look for JobPosted event (first 4 bytes of topic[0] should match event signature)
+          if (log.topics && log.topics[0] && log.topics[0].startsWith('0x')) {
+            try {
+              // Decode job ID from the event - it should be in topics[1]
+              if (log.topics[1]) {
+                contractJobId = parseInt(log.topics[1], 16);
+                console.log('Extracted contract job ID:', contractJobId);
+                break;
+              }
+            } catch (logError) {
+              console.log('Could not extract job ID from log:', logError.message);
+            }
+          }
+        }
+      }
+      
+      // Now call backend to process the escrow job
       try {
-        console.log('Creating escrow job via backend...');
+        console.log('Processing escrow job via backend...');
         
         const backendResponse = await fetch(`${BACKEND_URL}/api/drone/create-escrow-job`, {
           method: 'POST',
@@ -394,38 +441,43 @@ export const executeSeiPayment = async (orderData, walletAddress, deliveryDetail
             recipientAddress: shopOwnerWallet,
             senderAddress: senderAddress,
             amount: seiAmountFloat,
+            contractJobId: contractJobId,
             transactionHash: txHash,
             deliveryDetails: deliveryDetails,
-            orderData: orderData
+            orderData: orderData,
+            contractAddress: SEI_CONFIG.contractAddress
           })
         });
         
         if (!backendResponse.ok) {
-          console.error('Backend escrow job creation failed:', await backendResponse.text());
-          // Continue anyway as the payment went through
+          const errorText = await backendResponse.text();
+          console.error('Backend escrow job processing failed:', errorText);
+          // Continue anyway as the contract call succeeded
         } else {
           const escrowJobResult = await backendResponse.json();
-          console.log('Escrow job created successfully:', escrowJobResult);
+          console.log('Escrow job processed successfully:', escrowJobResult);
         }
         
       } catch (backendError) {
-        console.error('Failed to create escrow job via backend:', backendError);
-        // Continue anyway as the payment went through
+        console.error('Failed to process escrow job via backend:', backendError);
+        // Continue anyway as the contract call succeeded
       }
       
       return {
         success: true,
         transactionHash: txHash,
+        contractJobId: contractJobId,
         blockHeight: receipt ? parseInt(receipt.blockNumber, 16) : Math.floor(Math.random() * 1000000) + 2000000,
         gasUsed: receipt ? parseInt(receipt.gasUsed, 16) : Math.floor(Math.random() * 100000) + 50000,
         timestamp: new Date().toISOString(),
         seiAmount: seiAmountFloat,
         fromAddress: senderAddress,
-        toAddress: shopOwnerWallet,
-        recipientAddress: shopOwnerWallet,
+        toAddress: SEI_CONFIG.contractAddress, // Payment went to escrow contract
+        recipientAddress: shopOwnerWallet, // Final recipient
         walletType: window.sei ? 'sei-wallet' : 'metamask',
         contractInteraction: true,
-        jobDetails: jobDetails
+        jobDetails: jobDetails,
+        escrowActive: true
       };
       
     } catch (signError) {
